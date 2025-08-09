@@ -1,55 +1,42 @@
-# install.ps1 - Windows only PowerShell setup script
-Write-Host "=== Starting Oh My Posh + Font Installation ===" -ForegroundColor Cyan
-
-try {
-    # Ensure profile exists
-    if (-not (Test-Path -Path $PROFILE)) {
-        Write-Host "Creating PowerShell profile..." -ForegroundColor Yellow
-        New-Item -ItemType File -Path $PROFILE -Force | Out-Null
-    }
-
-    # Install oh-my-posh via winget
-    Write-Host "Installing Oh My Posh..." -ForegroundColor Yellow
-    winget install JanDeDobbeleer.OhMyPosh -s winget -h --accept-source-agreements --accept-package-agreements
-    if ($LASTEXITCODE -ne 0) { throw "Oh My Posh installation failed." }
-
-    # Download and install font (CaskaydiaCove Nerd Font)
-    Write-Host "Installing CaskaydiaCove Nerd Font..." -ForegroundColor Yellow
-    $fontZip = "$env:TEMP\font.zip"
-    Invoke-WebRequest -Uri "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CascadiaCode.zip" -OutFile $fontZip
-    Expand-Archive $fontZip -DestinationPath "$env:TEMP\font" -Force
-    $fontFiles = Get-ChildItem "$env:TEMP\font" -Filter *.ttf
-    foreach ($font in $fontFiles) {
-        Write-Host "Installing font: $($font.Name)" -ForegroundColor Green
-        Copy-Item $font.FullName -Destination "$env:WINDIR\Fonts"
-    }
-
-    # Update profile with theme
-    $themePath = "$env:USERPROFILE\AppData\Local\Programs\oh-my-posh\themes\jandedobbeleer.omp.json"
-    if (-not (Test-Path $themePath)) {
-        Write-Host "Downloading default theme..." -ForegroundColor Yellow
-        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/jandedobbeleer.omp.json" -OutFile $themePath
-    }
-    Add-Content -Path $PROFILE -Value "`noh-my-posh init pwsh --config `"$themePath`" | Invoke-Expression"
-
-    # Set icon theme for Windows Terminal
-    Write-Host "Setting Windows Terminal icon theme..." -ForegroundColor Yellow
-    $settingsPath = "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
-    if (Test-Path $settingsPath) {
-        $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
-        foreach ($profile in $settings.profiles.list) {
-            if ($profile.name -match "PowerShell") {
-                $profile.fontFace = "CaskaydiaCove Nerd Font"
-            }
-        }
-        $settings | ConvertTo-Json -Depth 10 | Set-Content $settingsPath
-    }
-
-    Write-Host "✅ Installation complete! Restart your terminal to see the changes." -ForegroundColor Green
+# Ensure running as admin
+if (-not ([Security.Principal.WindowsPrincipal] `
+    [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(`
+    [Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "Please run PowerShell as Administrator." -ForegroundColor Yellow
+    exit
 }
-catch {
-    Write-Host "❌ Error: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host "Reverting changes..." -ForegroundColor Yellow
-    Remove-Item $PROFILE -Force -ErrorAction SilentlyContinue
-    Write-Host "Profile reset. No permanent changes made." -ForegroundColor Cyan
+
+Write-Host "Checking if Posh-Git is installed..."
+if (-not (Get-Module -ListAvailable -Name Posh-Git)) {
+    Install-Module Posh-Git -Scope CurrentUser -Force
+    Write-Host "✅ Posh-Git installed."
+} else {
+    Write-Host "ℹ️ Posh-Git already installed. Skipping."
 }
+
+Write-Host "Checking if Oh My Posh is installed..."
+if (-not (Get-Command oh-my-posh.exe -ErrorAction SilentlyContinue)) {
+    winget install JanDeDobbeleer.OhMyPosh -s winget --silent
+    Write-Host "✅ Oh My Posh installed."
+} else {
+    Write-Host "ℹ️ Oh My Posh already installed. Skipping."
+}
+
+# Import modules for current session
+Import-Module Posh-Git
+Write-Host "✅ Posh-Git imported."
+
+# Configure Oh My Posh in profile
+$profilePath = $PROFILE
+if (-not (Test-Path $profilePath)) {
+    New-Item -ItemType File -Path $profilePath -Force | Out-Null
+}
+
+if (-not (Select-String -Path $profilePath -Pattern "oh-my-posh init pwsh" -Quiet)) {
+    Add-Content $profilePath 'oh-my-posh init pwsh | Invoke-Expression'
+    Write-Host "✅ Oh My Posh startup command added to profile."
+} else {
+    Write-Host "ℹ️ Oh My Posh already configured in profile."
+}
+
+Write-Host "🎯 Done! Restart PowerShell to see the changes."
