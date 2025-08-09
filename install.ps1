@@ -1,42 +1,52 @@
-# Ensure running as admin
-if (-not ([Security.Principal.WindowsPrincipal] `
-    [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(`
-    [Security.Principal.WindowsBuiltInRole] "Administrator")) {
-    Write-Host "Please run PowerShell as Administrator." -ForegroundColor Yellow
+# Windows PowerShell Posh-Git, Oh My Posh, and Terminal-Icons Installer
+
+# Ensure script is run in elevated mode
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(`
+    [Security.Principal.WindowsBuiltinRole] "Administrator")) {
+    Write-Host "Please run PowerShell as Administrator." -ForegroundColor Red
     exit
 }
 
-Write-Host "Checking if Posh-Git is installed..."
-if (-not (Get-Module -ListAvailable -Name Posh-Git)) {
-    Install-Module Posh-Git -Scope CurrentUser -Force
-    Write-Host "✅ Posh-Git installed."
-} else {
-    Write-Host "ℹ️ Posh-Git already installed. Skipping."
+# Set execution policy for current process
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+
+# Function to install a PowerShell module if not already installed
+function Install-IfMissing {
+    param (
+        [string]$ModuleName
+    )
+    if (Get-Module -ListAvailable -Name $ModuleName) {
+        Write-Host "$ModuleName is already installed. Skipping..." -ForegroundColor Yellow
+    } else {
+        Write-Host "Installing $ModuleName..." -ForegroundColor Cyan
+        Install-Module $ModuleName -Scope CurrentUser -Force
+    }
 }
 
-Write-Host "Checking if Oh My Posh is installed..."
-if (-not (Get-Command oh-my-posh.exe -ErrorAction SilentlyContinue)) {
-    winget install JanDeDobbeleer.OhMyPosh -s winget --silent
-    Write-Host "✅ Oh My Posh installed."
-} else {
-    Write-Host "ℹ️ Oh My Posh already installed. Skipping."
-}
+# Install required modules
+Install-IfMissing "posh-git"
+Install-IfMissing "oh-my-posh"
+Install-IfMissing "Terminal-Icons"
 
-# Import modules for current session
-Import-Module Posh-Git
-Write-Host "✅ Posh-Git imported."
-
-# Configure Oh My Posh in profile
+# Update PowerShell profile with module imports
 $profilePath = $PROFILE
-if (-not (Test-Path $profilePath)) {
+if (!(Test-Path -Path $profilePath)) {
     New-Item -ItemType File -Path $profilePath -Force | Out-Null
 }
 
-if (-not (Select-String -Path $profilePath -Pattern "oh-my-posh init pwsh" -Quiet)) {
-    Add-Content $profilePath 'oh-my-posh init pwsh | Invoke-Expression'
-    Write-Host "✅ Oh My Posh startup command added to profile."
-} else {
-    Write-Host "ℹ️ Oh My Posh already configured in profile."
+$profileContent = Get-Content $profilePath -ErrorAction SilentlyContinue
+$linesToAdd = @(
+    'Import-Module posh-git',
+    'Import-Module oh-my-posh',
+    'Import-Module Terminal-Icons',
+    'Set-PoshPrompt -Theme Paradox'
+)
+
+foreach ($line in $linesToAdd) {
+    if (-not ($profileContent -match [regex]::Escape($line))) {
+        Add-Content -Path $profilePath -Value $line
+        Write-Host "Added to profile: $line" -ForegroundColor Green
+    }
 }
 
-Write-Host "🎯 Done! Restart PowerShell to see the changes."
+Write-Host "`nSetup complete! Restart PowerShell to apply changes." -ForegroundColor Magenta
